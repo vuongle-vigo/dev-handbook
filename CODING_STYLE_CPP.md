@@ -64,18 +64,19 @@ basalt/
 ├── basalt.vcxproj             # ONE static-lib project — modules are folders below
 ├── include/
 │   └── basalt/                # public headers, one per module
-│       ├── mem.hpp
+│       ├── crt.hpp
 │       ├── socket.hpp
-│       └── http.hpp
-├── src/
-│   ├── core/                  # mem, alloc — depends on nothing
-│   ├── string/
-│   ├── json/
-│   └── net/                   # socket, http — depends on core
+│       ├── http.hpp
+│       └── json.hpp
+├── src/                       # NO main() here — this builds into basalt.lib
+│   ├── crt/                   # depends on nothing
+│   ├── socket/                # depends on crt
+│   ├── json/                  # depends on crt
+│   └── http/                  # depends on socket (+ json as needed)
 ├── tests/
-│   └── basalt_tests.vcxproj   # console app, links basalt
+│   └── basalt_tests.vcxproj   # exe project — main() lives here
 └── examples/
-    └── echo/
+    └── echo/                  # exe project — main() lives here
 ```
 
 Split into per-module projects (`basalt_core.lib`, `basalt_net.lib`) only when
@@ -166,17 +167,27 @@ Application rules:
 | Marker | Meaning | Example |
 |---|---|---|
 | `g_` | global — must carry a comment justifying it | `g_heap` |
-| anonymous `namespace {}` | file-local (preferred over `static` in C++) | helpers in §15 |
+| anonymous `namespace {}` | file-local (preferred over `static` in C++) | helpers in §16 |
 | `s_` | function-local `static` state | `s_started` |
-| trailing `_` | class member (default) | `cb_len_` |
+| trailing `_` | class member marker (default flavor) | `cb_len_` |
+| `m_` | alternative member marker — pick ONE per project, never both | `m_cbLen` |
 | `k` | constant (see §4) | `kMaxLen` |
+
+**Members** combine the §5 type prefix with the member marker — the two
+markers travel together, always:
+
+| Flavor | Formula | Examples |
+|---|---|---|
+| trailing `_` (default) | §5 prefix + name + `_` | `u32_timeout_ms_`, `h_sock_`, `b_connected_`, `p_sock_` |
+| `m_` (MSVC flavor) | `m_` + §5 prefix + camelCase | `m_u32TimeoutMs`, `m_cbLen`, `m_hSock` |
+
+Never double-mark (`m_u32_timeout_ms_`) and never drop the type prefix
+(`timeout_ms_` alone says nothing about what it counts).
 
 Hard rules:
 
 - **No exported mutable globals.** Public state goes through classes or
   functions.
-- A member that already has a type prefix keeps it and appends the member
-  marker: `u32_timeout_ms_`.
 
 ---
 
