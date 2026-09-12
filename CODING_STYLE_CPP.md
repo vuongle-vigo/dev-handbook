@@ -53,7 +53,33 @@ project's own macro prefix from §1.
 | Include order | own header **first**, blank line, then std headers, then others | see §15 |
 | Repo / project / target / output | lowercase | `basalt`, `basalt.lib` |
 | First line of every file | SPDX license identifier | `/* SPDX-License-Identifier: MIT */` |
-| Braces | function: opening brace on its own line; control flow: same line; one-line bodies and single guarded statements may collapse | see §15 |
+| Braces | function: opening brace on its own line; control flow: same line; one-line bodies and single guarded statements may collapse | see §16 |
+
+Repository layout — one solution, one static-lib project, modules as folders:
+
+```text
+basalt/
+├── basalt.sln                 # basalt (static lib) + basalt_tests + examples
+├── basalt.props               # shared settings: /std:c++20 /permissive- /W4, include paths
+├── basalt.vcxproj             # ONE static-lib project — modules are folders below
+├── include/
+│   └── basalt/                # public headers, one per module
+│       ├── mem.hpp
+│       ├── socket.hpp
+│       └── http.hpp
+├── src/
+│   ├── core/                  # mem, alloc — depends on nothing
+│   ├── string/
+│   ├── json/
+│   └── net/                   # socket, http — depends on core
+├── tests/
+│   └── basalt_tests.vcxproj   # console app, links basalt
+└── examples/
+    └── echo/
+```
+
+Split into per-module projects (`basalt_core.lib`, `basalt_net.lib`) only when
+build times or partial linking demand it — the source layout stays identical.
 
 Keep lines around 100 columns — prefer wrapping over horizontal scrolling.
 
