@@ -226,6 +226,20 @@ typedef enum <pfx>_status {
   5. copy deleted, move defined — or both deleted.
 - C gotcha: a `static const` variable is **not** a constant expression in C
   and cannot size a file-scope array — use `enum { k_name_max = 64 };`.
+- **C/C++ callback bridge.** A C API taking a function pointer cannot accept
+  a member function or a capturing lambda. Standard pattern: a C-linkage
+  thunk with internal linkage forwards to the member through the context
+  pointer the API provides:
+
+  ```cpp
+  extern "C" {
+      static void on_data_thunk(void* p_ctx, const char* sz_chunk, size_t cb)
+      {
+          static_cast<Downloader*>(p_ctx)->on_data(sz_chunk, cb);
+      }
+  }
+  vx_http_set_callback(p_client, on_data_thunk, this);   /* this rides p_ctx */
+  ```
 
 ---
 
