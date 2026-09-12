@@ -99,7 +99,10 @@ the prefix stays mandatory at the ABI. The C++ wrapper layer re-exposes the
 API under `namespace <project>` so application code never types the prefix.
 The "no prefix for internals" rule is only safe because internals are
 `static` (C) or in an anonymous namespace (C++) — those two rules travel
-together.
+together. The prefix follows **C linkage, not file extension**: a `.cpp`
+file that exports `extern "C"` functions is part of the C API and still
+prefixes them (`vx_clr_run` lives in a `.cpp`); a C++ class or free
+function inside `namespace basalt` never carries it.
 
 | Category | Convention | Example |
 |---|---|---|
