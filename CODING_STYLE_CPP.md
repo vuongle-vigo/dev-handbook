@@ -1,7 +1,7 @@
 # C++ CODING CONVENTIONS — CODING_STYLE_CPP
 
 The single C++ standard for **every C++ project in this workspace — present
-and future**. Read it before writing code. Follow it unless §13 (waivers)
+and future**. Read it before writing code. Follow it unless §14 (waivers)
 applies.
 
 Project-agnostic by design: a new project inherits everything below and only
@@ -46,7 +46,7 @@ project's own macro prefix from §1.
 | Item | Rule | Example |
 |---|---|---|
 | Source files | lowercase snake_case; headers `.hpp`, sources `.cpp` | `http_client.hpp` / `http_client.cpp` |
-| Module shape | **one `.hpp` + one `.cpp` pair** per module; declaration in the header, bodies in the source | §15 |
+| Module shape | **one `.hpp` + one `.cpp` pair** per module — classes and free-function families alike; declaration in the header, bodies in the source | §16 |
 | Layout | one module = one folder under `src/`; public headers under `include/<lib>/` | `src/net/http_client.cpp` |
 | Tests / examples | `tests/`, `examples/` at repo root | `tests/test_json.cpp` |
 | Header guard | `VX_<FILE>_HPP` | `VX_HTTP_HPP` |
@@ -225,7 +225,78 @@ allocator.
 
 ---
 
-## 10. Freestanding / no-CRT readiness
+## 10. Free-function modules (no class)
+
+Some modules are pure operations — `crt`, string helpers, small math. They
+hold no state, so they get no class: the module is a **family of free
+functions** inside the project namespace.
+
+1. **Never a class of static methods.** `class Mem { static void* copy(); };`
+   is a namespace with extra keystrokes.
+2. **Group by one nested namespace**: `basalt::mem`, `basalt::str`,
+   `basalt::math`. Do not name a function exactly like a global you did not
+   write — `basalt::memcpy` shadows `::memcpy` on every unqualified lookup
+   inside the namespace; `basalt::mem::copy` says the same thing safely.
+3. **Stateless by law.** No mutable file-scope variables, no mutable
+   function-local `static`. Constants and init guards (like §16.2's
+   `net_init_once`) are fine — anything else is hidden global state and
+   belongs in a class.
+4. **File shape is unchanged**: one `.hpp` + one `.cpp` pair, own header
+   first, file-local helpers in an anonymous namespace.
+5. **Mark what the compiler can enforce**: `noexcept` on non-allocating
+   operations, `constexpr` where the body qualifies, `[[nodiscard]]` when
+   discarding the result is certainly a bug.
+6. **Promote to a class the moment state appears** — shared resource,
+   lifecycle, cached values. That need is an object asking to exist.
+
+```cpp
+/* SPDX-License-Identifier: MIT */
+/* include/basalt/mem.hpp */
+#ifndef VX_MEM_HPP
+#define VX_MEM_HPP
+
+#include <cstddef>
+
+namespace basalt::mem {
+
+/// Copy cb_len bytes. Regions must not overlap.
+[[nodiscard]] void* copy(void* p_dst, const void* p_src, std::size_t cb_len) noexcept;
+
+/// Zero cb_len bytes.
+void zero(void* p_dst, std::size_t cb_len) noexcept;
+
+} // namespace basalt::mem
+#endif /* VX_MEM_HPP */
+```
+
+```cpp
+/* SPDX-License-Identifier: MIT */
+/* src/core/mem.cpp */
+#include "basalt/mem.hpp"                         /* own header first */
+
+#include <cstring>
+
+namespace basalt::mem {
+
+void* copy(void* p_dst, const void* p_src, std::size_t cb_len) noexcept
+{
+    if (cb_len == 0 || p_dst == p_src)
+        return p_dst;
+    return std::memcpy(p_dst, p_src, cb_len);     /* ::memcpy — global, on purpose */
+}
+
+void zero(void* p_dst, std::size_t cb_len) noexcept
+{
+    if (p_dst != nullptr && cb_len != 0)
+        std::memset(p_dst, 0, cb_len);
+}
+
+} // namespace basalt::mem
+```
+
+---
+
+## 11. Freestanding / no-CRT readiness
 
 Applies to modules meant to become position-independent code.
 
@@ -246,7 +317,7 @@ Applies to modules meant to become position-independent code.
 
 ---
 
-## 11. API stability & versioning
+## 12. API stability & versioning
 
 - Version macros in the main header: `VX_VERSION_MAJOR/MINOR/PATCH`.
 - After first release the public API is frozen: additions only; breaking
@@ -256,7 +327,7 @@ Applies to modules meant to become position-independent code.
 
 ---
 
-## 12. Comments & documentation
+## 13. Comments & documentation
 
 - `///` Doxygen on every public symbol — at minimum a one-line summary.
 - Comments explain **why**, never restate what the code does.
@@ -265,7 +336,7 @@ Applies to modules meant to become position-independent code.
 
 ---
 
-## 13. Waivers
+## 14. Waivers
 
 - **Mirroring WinAPI documentation**: keep MSDN parameter names verbatim
   (`dwFlags`, `lpSecurityAttributes`) so code and docs align line by line.
@@ -274,7 +345,7 @@ Applies to modules meant to become position-independent code.
 
 ---
 
-## 14. Review checklist
+## 15. Review checklist
 
 Run on every new module and every PR:
 
@@ -288,16 +359,16 @@ Run on every new module and every PR:
 - [ ] Bodies in the `.cpp`, declaration in the `.hpp`; no `using namespace`
       in headers
 - [ ] Compiles `/W4`-clean
-- [ ] no-CRT module: all of §10 holds
+- [ ] no-CRT module: all of §11 holds
 
 ---
 
-## 15. Worked example — full files
+## 16. Worked example — full files
 
 One module = two files: `socket.hpp` (declaration) + `socket.cpp`
 (implementation), plus a consumer.
 
-### 15.1 `include/basalt/socket.hpp`
+### 16.1 `include/basalt/socket.hpp`
 
 ```cpp
 /* SPDX-License-Identifier: MIT */
@@ -341,7 +412,7 @@ private:
 #endif /* VX_SOCKET_HPP */
 ```
 
-### 15.2 `src/net/socket.cpp`
+### 16.2 `src/net/socket.cpp`
 
 ```cpp
 /* SPDX-License-Identifier: MIT */
@@ -446,7 +517,7 @@ void Socket::close()
 } // namespace basalt
 ```
 
-### 15.3 `examples/echo.cpp` — consumer side
+### 16.3 `examples/echo.cpp` — consumer side
 
 ```cpp
 /* SPDX-License-Identifier: MIT */
