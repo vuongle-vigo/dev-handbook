@@ -231,6 +231,17 @@ typedef enum <pfx>_status {
   Expose a class through its namespace (C++ consumers) or through
   `extern "C"` free functions taking an opaque pointer (C consumers). At a
   C-API boundary use `new (std::nothrow)` — plain `new` throws.
+- C++ code casts by name (`static_cast`, `reinterpret_cast`) — never the
+  C-style `(T)x`. Mark every error-returning function `[[nodiscard]]` so an
+  ignored status code becomes a compiler warning.
+- **C++ layer layout**: one namespace per project wraps every public C++
+  type — it is the prefix of the C++ world, mandatory for all of them
+  (`basalt::Socket`, `basalt::HttpClient`); never fold the symbol prefix
+  into class names. Stateless helper modules (crt) stay free functions in
+  the namespace — never a class of static methods; one level of nested
+  namespaces may group families (`basalt::mem::copy`, `basalt::str::dup`).
+  The prefix appears in the C++ layer only where it names the
+  `extern "C"` functions being called.
 - **C/C++ callback bridge.** A C API taking a function pointer cannot accept
   a member function or a capturing lambda. Standard pattern: a C-linkage
   thunk with internal linkage forwards to the member through the context
@@ -257,6 +268,10 @@ position-independent code).
   own `crt` layer provides it. Memory comes from the module's allocator
   (Heap/VirtualAlloc wrappers).
 - Includes: WinAPI headers + own headers only.
+- **C++20 in a no-CRT project is a subset**: `std::span`, `std::string_view`,
+  `std::exchange`, concepts, `constexpr`, structured bindings are fine
+  (nothing allocated, nothing thrown). Anything that allocates or throws —
+  `std::string`, `std::vector`, iostreams, exceptions — stays out.
 - Build flags: `/GS-`, `/O1` or `/Os`, no SEH (`/EH-`); never `__try/__except`
   — x64 SEH is table-based unwinding and does not survive shellcode.
 - No global/static objects with constructors; no TLS (`__declspec(thread)`).
