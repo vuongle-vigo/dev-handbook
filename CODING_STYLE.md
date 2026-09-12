@@ -60,6 +60,7 @@ Rules for any **new** project:
 |---|---|---|
 | Source files | lowercase snake_case; `.c`/`.h` for C, `.cpp`/`.hpp` for C++ | `http_client.c`, `socket.hpp` |
 | Layout | one module = one folder under `src/`; public headers under `include/<lib>/` | `src/net/http_client.c` |
+| Module shape | **one `.h` + one `.cpp` per module**; the `.h` carries the C API plus — under `#ifdef __cplusplus` — the C++ class | see §15 |
 | Tests / examples | `tests/`, `examples/` at repo root | `tests/test_json.c` |
 | Header guard | `<PREFIX>_<FILE>_H` | `VX_HTTP_H` |
 | Include order | own header **first** (catches non-self-contained headers), blank line, system headers | see §15 |
@@ -242,13 +243,13 @@ typedef enum <pfx>_status {
   namespaces may group families (`basalt::mem::copy`, `basalt::str::dup`).
   The prefix appears in the C++ layer only where it names the
   `extern "C"` functions being called.
-- **Header/source split**: one class = one `.hpp` + one `.cpp` pair with the
-  same base name. The `.hpp` holds the class declaration — signatures,
-  `= default`/`= delete`, member initializers — and nothing with logic;
-  every body lives in the `.cpp`, qualified (`Socket::connect`) with the
-  namespace already opened. The `.cpp` includes its own header first.
-  `using namespace` never appears in a header; in a `.cpp`, open the
-  namespace block instead.
+- **Header/source split**: one module = one `.h` + one `.cpp` pair with the
+  same base name. The `.h` carries the C API (`extern "C"`, both languages)
+  and — under `#ifdef __cplusplus` — the C++ class declaration: signatures,
+  `= default`/`= delete`, member initializers, nothing with logic. The
+  `.cpp` implements both, qualified (`Socket::connect`) with the namespace
+  already opened, and includes its own header first. `using namespace`
+  never appears in a header; in a `.cpp`, open the namespace block instead.
 - **C/C++ callback bridge.** A C API taking a function pointer cannot accept
   a member function or a capturing lambda. Standard pattern: a C-linkage
   thunk with internal linkage forwards to the member through the context
@@ -341,13 +342,13 @@ Run on every new module and every PR:
 
 ## 15. Worked examples — full files
 
-One module, three layers, complete enough to copy. This is the shape every
-module follows. The consumer example at the end shows both doors of §4:
-the namespaced C++ class and the prefixed C API. Note the deliberate split:
-folder names use the project name (`basalt/`), macros and symbols use the
-prefix (`VX_`, `vx_`).
+One module = two files — `socket.h` + `socket.cpp` — complete enough to
+copy. This is the shape every module follows. The consumer example at the
+end shows both doors of §4: the namespaced C++ class and the prefixed C
+API. Note the deliberate split: folder names use the project name
+(`basalt/`), macros and symbols use the prefix (`VX_`, `vx_`).
 
-### 15.1 `include/basalt/socket.h` — C API, both-language header
+### 15.1 `include/basalt/socket.h` — one header: C API + C++ class
 
 ```c
 /* SPDX-License-Identifier: MIT */
@@ -380,14 +381,42 @@ vx_status  vx_socket_send(vx_socket* p_sock,
 #ifdef __cplusplus
 }
 #endif
+
+/* ---- C++ layer: visible to C++ compilers only ---- */
+#ifdef __cplusplus
+namespace basalt {
+
+class Socket {
+public:
+    Socket() = default;
+    ~Socket();                                    /* body in the .cpp */
+
+    Socket(const Socket&)            = delete;    /* §9 rule 5 */
+    Socket& operator=(const Socket&) = delete;
+
+    Socket(Socket&& other) noexcept;
+    Socket& operator=(Socket&& other) noexcept;
+
+    bool connect(const char* sz_host, uint16_t u16_port);
+    bool send(const void* p_buf, size_t cb_len);
+    void close();
+
+private:
+    vx_socket* p_sock_ = nullptr;
+};
+
+} // namespace basalt
+#endif /* __cplusplus */
 #endif /* VX_SOCKET_H */
 ```
 
-### 15.2 `src/net/socket.c` — C implementation
+### 15.2 `src/net/socket.cpp` — one source: C API + class bodies
 
 ```c
 /* SPDX-License-Identifier: MIT */
 #include "basalt/socket.h"                       /* own header first */
+
+#include <utility>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -491,50 +520,8 @@ vx_status vx_socket_send(vx_socket* p_sock, const void* p_buf, size_t cb_len)
         return VX_ERR_NETWORK;
     return VX_OK;
 }
-```
 
-### 15.3 `socket_cpp.hpp` + `socket_cpp.cpp` — C++ wrapper (declaration / definition split)
-
-```cpp
-/* SPDX-License-Identifier: MIT */
-/* include/basalt/socket_cpp.hpp — declaration only */
-#ifndef VX_SOCKET_CPP_HPP
-#define VX_SOCKET_CPP_HPP
-
-#include "basalt/socket.h"
-
-namespace basalt {
-
-class Socket {
-public:
-    Socket() = default;
-    ~Socket();                                    /* body in the .cpp */
-
-    Socket(const Socket&)            = delete;    /* §9 rule 5: no copy   */
-    Socket& operator=(const Socket&) = delete;
-
-    Socket(Socket&& other) noexcept;              /* move transfers owner */
-    Socket& operator=(Socket&& other) noexcept;
-
-    bool connect(const char* sz_host, uint16_t u16_port);
-    bool send(const void* p_buf, size_t cb_len);
-    void close();
-
-private:
-    vx_socket* p_sock_ = nullptr;                 /* type prefix + member marker */
-};
-
-} // namespace basalt
-#endif /* VX_SOCKET_CPP_HPP */
-```
-
-```cpp
-/* SPDX-License-Identifier: MIT */
-/* src/net/socket_cpp.cpp — every body, namespace already opened */
-#include "basalt/socket_cpp.hpp"                  /* own header first */
-
-#include <utility>
-
+/* ---- C++ layer ---- */
 namespace basalt {
 
 Socket::~Socket() { close(); }
@@ -575,11 +562,11 @@ void Socket::close()
 } // namespace basalt
 ```
 
-### 15.4 `examples/echo.cpp` — consumer side: both doors of §4
+### 15.3 `examples/echo.cpp` — consumer side: both doors of §4
 
 ```cpp
 /* SPDX-License-Identifier: MIT */
-#include "basalt/socket_cpp.hpp"
+#include "basalt/socket.h"
 
 int main()
 {
