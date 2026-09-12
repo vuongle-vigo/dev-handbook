@@ -226,6 +226,11 @@ typedef enum <pfx>_status {
   5. copy deleted, move defined — or both deleted.
 - C gotcha: a `static const` variable is **not** a constant expression in C
   and cannot size a file-scope array — use `enum { k_name_max = 64 };`.
+- **Classes never carry `extern "C"`** — the standard ignores C linkage for
+  class members; a member function with `extern "C"` is a compile error.
+  Expose a class through its namespace (C++ consumers) or through
+  `extern "C"` free functions taking an opaque pointer (C consumers). At a
+  C-API boundary use `new (std::nothrow)` — plain `new` throws.
 - **C/C++ callback bridge.** A C API taking a function pointer cannot accept
   a member function or a capturing lambda. Standard pattern: a C-linkage
   thunk with internal linkage forwards to the member through the context
