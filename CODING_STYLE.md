@@ -242,6 +242,13 @@ typedef enum <pfx>_status {
   namespaces may group families (`basalt::mem::copy`, `basalt::str::dup`).
   The prefix appears in the C++ layer only where it names the
   `extern "C"` functions being called.
+- **Header/source split**: one class = one `.hpp` + one `.cpp` pair with the
+  same base name. The `.hpp` holds the class declaration — signatures,
+  `= default`/`= delete`, member initializers — and nothing with logic;
+  every body lives in the `.cpp`, qualified (`Socket::connect`) with the
+  namespace already opened. The `.cpp` includes its own header first.
+  `using namespace` never appears in a header; in a `.cpp`, open the
+  namespace block instead.
 - **C/C++ callback bridge.** A C API taking a function pointer cannot accept
   a member function or a capturing lambda. Standard pattern: a C-linkage
   thunk with internal linkage forwards to the member through the context
@@ -486,53 +493,86 @@ vx_status vx_socket_send(vx_socket* p_sock, const void* p_buf, size_t cb_len)
 }
 ```
 
-### 15.3 `include/basalt/socket_cpp.hpp` — C++ wrapper (plain class, §9 rules)
+### 15.3 `socket_cpp.hpp` + `socket_cpp.cpp` — C++ wrapper (declaration / definition split)
 
 ```cpp
 /* SPDX-License-Identifier: MIT */
+/* include/basalt/socket_cpp.hpp — declaration only */
 #ifndef VX_SOCKET_CPP_HPP
 #define VX_SOCKET_CPP_HPP
 
 #include "basalt/socket.h"
-#include <winsock2.h>
 
 namespace basalt {
 
 class Socket {
 public:
     Socket() = default;
-    ~Socket() { close(); }
+    ~Socket();                                    /* body in the .cpp */
 
     Socket(const Socket&)            = delete;    /* §9 rule 5: no copy   */
     Socket& operator=(const Socket&) = delete;
 
-    bool connect(const char* sz_host, uint16_t u16_port)
-    {
-        close();
-        p_sock_ = vx_socket_create();
-        if (p_sock_ == nullptr)
-            return false;
-        return vx_socket_connect(p_sock_, sz_host, u16_port) == VX_OK;
-    }
+    Socket(Socket&& other) noexcept;              /* move transfers owner */
+    Socket& operator=(Socket&& other) noexcept;
 
-    bool send(const void* p_buf, size_t cb_len)
-    {
-        return p_sock_ != nullptr
-            && vx_socket_send(p_sock_, p_buf, cb_len) == VX_OK;
-    }
-
-    void close()
-    {
-        vx_socket_destroy(p_sock_);
-        p_sock_ = nullptr;
-    }
+    bool connect(const char* sz_host, uint16_t u16_port);
+    bool send(const void* p_buf, size_t cb_len);
+    void close();
 
 private:
-    vx_socket* p_sock_ = nullptr;                /* type prefix + member marker */
+    vx_socket* p_sock_ = nullptr;                 /* type prefix + member marker */
 };
 
 } // namespace basalt
 #endif /* VX_SOCKET_CPP_HPP */
+```
+
+```cpp
+/* SPDX-License-Identifier: MIT */
+/* src/net/socket_cpp.cpp — every body, namespace already opened */
+#include "basalt/socket_cpp.hpp"                  /* own header first */
+
+#include <utility>
+
+namespace basalt {
+
+Socket::~Socket() { close(); }
+
+Socket::Socket(Socket&& other) noexcept
+    : p_sock_(std::exchange(other.p_sock_, nullptr)) {}
+
+Socket& Socket::operator=(Socket&& other) noexcept
+{
+    if (this != &other) {
+        close();
+        p_sock_ = std::exchange(other.p_sock_, nullptr);
+    }
+    return *this;
+}
+
+bool Socket::connect(const char* sz_host, uint16_t u16_port)
+{
+    close();
+    p_sock_ = vx_socket_create();
+    if (p_sock_ == nullptr)
+        return false;
+    return vx_socket_connect(p_sock_, sz_host, u16_port) == VX_OK;
+}
+
+bool Socket::send(const void* p_buf, size_t cb_len)
+{
+    return p_sock_ != nullptr
+        && vx_socket_send(p_sock_, p_buf, cb_len) == VX_OK;
+}
+
+void Socket::close()
+{
+    vx_socket_destroy(p_sock_);
+    p_sock_ = nullptr;
+}
+
+} // namespace basalt
 ```
 
 ### 15.4 `examples/echo.cpp` — consumer side: both doors of §4
