@@ -243,6 +243,13 @@ typedef enum <pfx>_status {
   namespaces may group families (`basalt::mem::copy`, `basalt::str::dup`).
   The prefix appears in the C++ layer only where it names the
   `extern "C"` functions being called.
+- **Macros ignore namespaces.** A `#define` inside `namespace basalt` is
+  still a global macro — the preprocessor runs before the compiler knows
+  about namespaces. In the C++ layer prefer `constexpr` constants and
+  inline functions (they namespace and type-check); macros survive only as
+  include guards, conditional-compilation flags, and C-API definitions —
+  all named `<PREFIX>_SCREAMING`, where the prefix is the macro's only
+  scope.
 - **Header/source split**: one module = one `.h` + one `.cpp` pair with the
   same base name. The `.h` carries the C API (`extern "C"`, both languages)
   and — under `#ifdef __cplusplus` — the C++ class declaration: signatures,
