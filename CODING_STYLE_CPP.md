@@ -245,11 +245,15 @@ shellcode-compatible):
 **Ownership**: a resource owner class implements the full rule of five;
 everything else holds no resources and stays copyable.
 
-**Layout**: one namespace per project wraps every public type
-(`basalt::Socket`, `basalt::HttpClient`); never fold the macro prefix into
-class names. Stateless helpers stay free functions in the namespace — never
-a class of static methods; one level of nested namespaces may group families
-(`basalt::mem::copy`, `basalt::str::dup`).
+**Layout**: one namespace per project wraps every public type — modules nest
+*inside* it (`basalt::socket::Socket`, `basalt::crt::memcpy`) and never
+become top-level namespaces: `socket`, `http`, `crt` are generic words any
+other library may claim, and your own projects share modules. Short call
+sites come from aliases at the point of use — `namespace mem = basalt::mem;`
+is per-file, local, and collides with nothing (inside the project's own
+`.cpp` files no alias is needed, `crt::memcpy` already resolves). Never fold
+the macro prefix into class names. Stateless helpers stay free functions in
+the namespace — never a class of static methods.
 
 **Header/source split**: the `.hpp` holds the class declaration —
 signatures, `= default`/`= delete`, member initializers, nothing with
