@@ -276,6 +276,14 @@ functions** inside the project namespace.
    `basalt::math`. Do not name a function exactly like a global you did not
    write — `basalt::memcpy` shadows `::memcpy` on every unqualified lookup
    inside the namespace; `basalt::mem::copy` says the same thing safely.
+   **Exception — CRT replacements**: the `crt` module may keep the CRT name
+   inside the namespace (`basalt::memcpy`, `basalt::memzero`) because
+   replacing those functions is its purpose. Conditions: same signature and
+   semantics as the standard, call sites always qualified
+   (`basalt::memcpy(...)`), and the implementation reaches the CRT through
+   `::memcpy`/intrinsics (in no-CRT builds it is written by hand). Never
+   define these at global scope — replacing `::memcpy` itself is undefined
+   behavior.
 3. **Stateless by law.** No mutable file-scope variables, no mutable
    function-local `static`. Constants and init guards (like §16.2's
    `net_init_once`) are fine — anything else is hidden global state and
