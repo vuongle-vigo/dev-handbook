@@ -55,28 +55,30 @@ project's own macro prefix from §1.
 | First line of every file | SPDX license identifier | `/* SPDX-License-Identifier: MIT */` |
 | Braces | function: opening brace on its own line; control flow: same line; one-line bodies and single guarded statements may collapse | see §16 |
 
-Repository layout — one solution, one static-lib project, modules as folders:
+Repository layout — one solution, one static-lib project, modules as folders.
+The nested project folder is the VS default and is fine; the only invariant
+is that `include/` and `src/` stay **siblings of the `.vcxproj`**, so every
+path inside it keeps working:
 
 ```text
-basalt/
-├── basalt.sln                 # basalt (static lib) + basalt_tests + examples
-├── basalt.props               # shared settings: /std:c++20 /permissive- /W4, include paths
-├── basalt.vcxproj             # ONE static-lib project — modules are folders below
-├── include/
-│   └── basalt/                # public headers, one per module
-│       ├── crt.hpp
-│       ├── socket.hpp
-│       ├── http.hpp
-│       └── json.hpp
-├── src/                       # NO main() here — this builds into basalt.lib
-│   ├── crt/                   # depends on nothing
-│   ├── socket/                # depends on crt
-│   ├── json/                  # depends on crt
-│   └── http/                  # depends on socket (+ json as needed)
-├── tests/
-│   └── basalt_tests.vcxproj   # exe project — main() lives here
-└── examples/
-    └── echo/                  # exe project — main() lives here
+basalt/                          # repo root — the solution sits here (VS default)
+├── basalt.slnx                  # references the projects by relative path
+├── basalt.props                 # shared settings: /std:c++20 /permissive- /W4
+└── basalt/                      # project folder — one folder per vcxproj
+    ├── basalt.vcxproj           # ONE static-lib project
+    ├── include/
+    │   └── basalt/              # public headers, one per module
+    │       ├── crt.hpp
+    │       ├── socket.hpp
+    │       ├── http.hpp
+    │       └── json.hpp
+    ├── src/                     # NO main() here — this builds into basalt.lib
+    │   ├── crt/                 # depends on nothing
+    │   ├── socket/              # depends on crt
+    │   ├── json/                # depends on crt
+    │   └── http/                # depends on socket (+ json as needed)
+    └── tests/
+        └── tests.vcxproj        # exe project — main() lives here (test_*.cpp files)
 ```
 
 Split into per-module projects (`basalt_core.lib`, `basalt_net.lib`) only when
