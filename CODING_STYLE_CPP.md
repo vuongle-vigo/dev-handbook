@@ -48,7 +48,7 @@ project's own macro prefix from §1.
 | Source files | lowercase snake_case; headers `.hpp`, sources `.cpp` | `http_client.hpp` / `http_client.cpp` |
 | Module shape | **one `.hpp` + one `.cpp` pair** per module — classes and free-function families alike; declaration in the header, bodies in the source | §16 |
 | Layout | one module = one folder under `src/`; public headers under `include/<lib>/` | `src/net/http_client.cpp` |
-| Tests / examples | `tests/`, `examples/` at repo root | `tests/test_json.cpp` |
+| Tests / examples | `tests/`, `examples/` at repo root; one `test_<module>.cpp` per module | `tests/test_json.cpp` |
 | Header guard | `VX_<FILE>_HPP` | `VX_HTTP_HPP` |
 | Include order | own header **first**, blank line, then std headers, then others | see §15 |
 | Repo / project / target / output | lowercase | `basalt`, `basalt.lib` |
@@ -85,6 +85,9 @@ Split into per-module projects (`basalt_core.lib`, `basalt_net.lib`) only when
 build times or partial linking demand it — the source layout stays identical.
 
 Keep lines around 100 columns — prefer wrapping over horizontal scrolling.
+
+Commit this block verbatim as `.editorconfig` at the repo root — it is part
+of the standard, not an optional extra:
 
 ```ini
 root = true
@@ -161,6 +164,26 @@ Application rules:
   this table).
 - Loop indices `i`, `j` and throwaway locals in short scopes need no prefix.
 - When a variable's type changes, its prefix changes with it — same commit.
+
+**Type sources — keywords, typedefs, CRT code.** Three layers must not be
+confused. Language keywords (`void`, `bool`, `char`, `int`) belong to no
+library. Typedefs (`SIZE_T`, `DWORD`, `uint32_t`, `std::size_t`) are
+compile-time names and cost nothing at link time. CRT **code** — functions
+and objects — is what §11 bans; typedefs are not CRT code.
+
+1. Keywords are always allowed, in every build flavor.
+2. Typedef-only headers (`<cstdint>`, `<cstddef>`) are allowed in any build;
+   they link nothing.
+3. In public headers of WinAPI-only projects prefer the WinAPI type: `SIZE_T`
+   over `std::size_t`, `DWORD`/`DWORD64` over `uint32_t`/`uint64_t`,
+   `LONGLONG` over `std::int64_t` — one vocabulary, no casts between twins.
+   (`Windows.h` already pulls `size_t` in through `vcruntime.h`; `SIZE_T` is
+   the same underlying type.)
+4. Prefixes follow width and meaning, never the typedef name: `DWORD` is
+   `u32_`, `DWORD64` is `u64_`, `WORD` is `u16_`, `LONGLONG` is `i64_`,
+   `BOOL` is `b_` (prefix by meaning — it is a boolean in disguise), and a
+   `SIZE_T` counting bytes or elements is `cb_`/`c_` as usual. The prefix
+   set in the table above is closed: no `dw_`, no per-typedef inventions.
 
 ---
 
@@ -253,7 +276,12 @@ sites come from aliases at the point of use — `namespace mem = basalt::mem;`
 is per-file, local, and collides with nothing (inside the project's own
 `.cpp` files no alias is needed, `crt::memcpy` already resolves). Never fold
 the macro prefix into class names. Stateless helpers stay free functions in
-the namespace — never a class of static methods.
+the namespace — never a class of static methods. One module folder maps to
+one nested namespace exactly one level deep (`src/crt/` → `basalt::crt`,
+flat) — family sub-namespaces inside a module (`basalt::crt::string`) add
+qualification noise and protect nothing. When a module outgrows its single
+file pair, split it into sibling modules with their own one-level
+namespaces (`basalt::mem`, `basalt::str`), never deeper nesting.
 
 **Header/source split**: the `.hpp` holds the class declaration —
 signatures, `= default`/`= delete`, member initializers, nothing with
@@ -281,11 +309,12 @@ functions** inside the project namespace.
    write — `basalt::memcpy` shadows `::memcpy` on every unqualified lookup
    inside the namespace; `basalt::mem::copy` says the same thing safely.
    **Exception — CRT replacements**: the `crt` module may keep the CRT name
-   inside the namespace (`basalt::memcpy`, `basalt::memzero`) because
-   replacing those functions is its purpose. Conditions: same signature and
-   semantics as the standard, call sites always qualified
-   (`basalt::memcpy(...)`), and the implementation reaches the CRT through
-   `::memcpy`/intrinsics (in no-CRT builds it is written by hand). Never
+   inside the namespace (`basalt::crt::memcpy`, `basalt::crt::memzero`)
+   because replacing those functions is its purpose. Conditions: same
+   signature and semantics as the standard, call sites always qualified
+   (`basalt::crt::memcpy(...)`), and the implementation reaches the CRT
+   through `::memcpy`/intrinsics (in no-CRT builds it is written by hand).
+   Never
    define these at global scope — replacing `::memcpy` itself is undefined
    behavior.
 3. **Stateless by law.** No mutable file-scope variables, no mutable
@@ -306,15 +335,15 @@ functions** inside the project namespace.
 #ifndef VX_MEM_HPP
 #define VX_MEM_HPP
 
-#include <cstddef>
+#include <Windows.h>
 
 namespace basalt::mem {
 
 /// Copy cb_len bytes. Regions must not overlap.
-[[nodiscard]] void* copy(void* p_dst, const void* p_src, std::size_t cb_len) noexcept;
+[[nodiscard]] void* copy(void* p_dst, const void* p_src, SIZE_T cb_len) noexcept;
 
 /// Zero cb_len bytes.
-void zero(void* p_dst, std::size_t cb_len) noexcept;
+void zero(void* p_dst, SIZE_T cb_len) noexcept;
 
 } // namespace basalt::mem
 #endif /* VX_MEM_HPP */
@@ -329,14 +358,14 @@ void zero(void* p_dst, std::size_t cb_len) noexcept;
 
 namespace basalt::mem {
 
-void* copy(void* p_dst, const void* p_src, std::size_t cb_len) noexcept
+void* copy(void* p_dst, const void* p_src, SIZE_T cb_len) noexcept
 {
     if (cb_len == 0 || p_dst == p_src)
         return p_dst;
     return std::memcpy(p_dst, p_src, cb_len);     /* ::memcpy — global, on purpose */
 }
 
-void zero(void* p_dst, std::size_t cb_len) noexcept
+void zero(void* p_dst, SIZE_T cb_len) noexcept
 {
     if (p_dst != nullptr && cb_len != 0)
         std::memset(p_dst, 0, cb_len);
@@ -370,7 +399,8 @@ Applies to modules meant to become position-independent code.
 
 ## 12. API stability & versioning
 
-- Version macros in the main header: `VX_VERSION_MAJOR/MINOR/PATCH`.
+- Version macros live in one dedicated header, `include/<lib>/version.hpp`
+  (`VX_VERSION_MAJOR/MINOR/PATCH`) — never scattered across module headers.
 - After first release the public API is frozen: additions only; breaking
   changes require a major version and a `MIGRATION.md` note.
 - Prefer hiding implementation: PIMPL or forward-declared privates keep
@@ -391,6 +421,10 @@ Applies to modules meant to become position-independent code.
 
 - **Mirroring WinAPI documentation**: keep MSDN parameter names verbatim
   (`dwFlags`, `lpSecurityAttributes`) so code and docs align line by line.
+- **Mirroring CRT documentation**: CRT-replacement declarations (§10) keep
+  the standard's parameter names verbatim (`dest`, `src`, `count`) for the
+  same reason. Implementation bodies use §5-prefixed names for their own
+  locals, and definition parameter names must match the declaration.
 - Any other deviation requires a one-line comment at the site stating why.
   Silence is not a waiver.
 
@@ -405,6 +439,8 @@ Run on every new module and every PR:
 - [ ] `[[nodiscard]]` on all status-returning functions
 - [ ] `out` parameters last, named `out`; error paths leave outputs untouched
 - [ ] Type prefixes applied where the compiler can't help (§5)
+- [ ] WinAPI types in public headers (`SIZE_T`, not `std::size_t`); prefixes
+      follow width and meaning, never the typedef name
 - [ ] No `#define` constants — `constexpr` instead; macros are `VX_`-prefixed
 - [ ] Named casts only; no plain `new` outside owners
 - [ ] Bodies in the `.cpp`, declaration in the `.hpp`; no `using namespace`
@@ -426,9 +462,7 @@ One module = two files: `socket.hpp` (declaration) + `socket.cpp`
 #ifndef VX_SOCKET_HPP
 #define VX_SOCKET_HPP
 
-#include <cstddef>
-#include <cstdint>
-#include <winsock2.h>
+#include <winsock2.h>                              /* SIZE_T/DWORD/WORD via Windows headers */
 
 namespace basalt {
 
@@ -449,13 +483,13 @@ public:
     Socket(Socket&& other) noexcept;
     Socket& operator=(Socket&& other) noexcept;
 
-    [[nodiscard]] status connect(const char* sz_host, uint16_t u16_port);
-    [[nodiscard]] status send(const void* p_buf, std::size_t cb_len);
+    [[nodiscard]] status connect(const char* sz_host, WORD u16_port);
+    [[nodiscard]] status send(const void* p_buf, SIZE_T cb_len);
     void close();
 
 private:
     SOCKET   h_sock_        = INVALID_SOCKET;     /* type prefix + member marker */
-    uint32_t u32_timeout_ms_ = 30000;
+    DWORD    u32_timeout_ms_ = 30000;
     bool     b_connected_   = false;
 };
 
@@ -478,7 +512,7 @@ private:
 namespace basalt {
 
 namespace {                                       /* file-local: anonymous namespace */
-constexpr uint32_t kDefaultTimeoutMs = 30000;
+constexpr DWORD kDefaultTimeoutMs = 30000;
 
 bool host_is_valid(const char* sz_host) noexcept
 {
@@ -516,7 +550,7 @@ Socket& Socket::operator=(Socket&& other) noexcept
     return *this;
 }
 
-status Socket::connect(const char* sz_host, uint16_t u16_port)
+status Socket::connect(const char* sz_host, WORD u16_port)
 {
     if (h_sock_ != INVALID_SOCKET)
         close();
@@ -543,7 +577,7 @@ status Socket::connect(const char* sz_host, uint16_t u16_port)
     return status::kOk;
 }
 
-status Socket::send(const void* p_buf, std::size_t cb_len)
+status Socket::send(const void* p_buf, SIZE_T cb_len)
 {
     if (p_buf == nullptr || !b_connected_ || cb_len == 0)
         return status::kErrArg;
@@ -552,7 +586,7 @@ status Socket::send(const void* p_buf, std::size_t cb_len)
     const int cb_sent = send(h_sock_,
                              static_cast<const char*>(p_buf),
                              static_cast<int>(cb_len), 0);
-    if (cb_sent == SOCKET_ERROR || static_cast<std::size_t>(cb_sent) != cb_len)
+    if (cb_sent == SOCKET_ERROR || static_cast<SIZE_T>(cb_sent) != cb_len)
         return status::kErrNetwork;
     return status::kOk;
 }
