@@ -187,7 +187,7 @@ enum class Status {
 #ifndef VX_SOCKET_HPP
 #define VX_SOCKET_HPP
 
-#include "basalt/status.hpp"                       /* one status enum per library */
+#include "basalt/status.hpp"
 
 #include <winsock2.h>                              /* SIZE_T/DWORD/WORD via Windows headers */
 
@@ -198,14 +198,8 @@ public:
     Socket() = default;
     ~Socket();
 
-    Socket(const Socket&)            = delete;
-    Socket& operator=(const Socket&) = delete;
-
-    Socket(Socket&& other) noexcept;
-    Socket& operator=(Socket&& other) noexcept;
-
-    [[nodiscard]] Status connect(const char* sz_host, WORD u16_port);
-    [[nodiscard]] Status send(const void* p_buf, SIZE_T cb_len);
+    Status connect(const char* sz_host, WORD u16_port);
+    Status send(const void* p_buf, SIZE_T cb_len);
     void close();
 
 private:
